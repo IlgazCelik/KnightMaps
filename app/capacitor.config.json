@@ -1,0 +1,13 @@
+{
+  "appId": "com.example.wifiscanner",
+  "appName": "KnightMaps",
+  "webDir": "dist",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "force"
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

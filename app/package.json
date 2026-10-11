@@ -1,0 +1,20 @@
+{
+  "name": "wifi-scanner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "android": "vite build && npx cap sync android && npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@fontsource/montserrat": "^5.2.5"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.0.0",
+    "vite": "^6.0.0"
+  }
+}
