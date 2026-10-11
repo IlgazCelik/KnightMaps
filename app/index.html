@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>WiFi Scanner</title>
+  <style>
+    /* UCF's brand face is Gotham (licensed); Montserrat is the free Gotham look-alike, bundled for offline use. */
+    @font-face {
+      font-family: "KnightMaps Title";
+      src: url(fonts/montserrat-latin-800-normal.woff2) format("woff2");
+      font-weight: 800;
+      font-display: block;
+    }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: monospace;
+      background: #111111;
+      color: #F1EDE4;
+    }
+    #map { position: fixed; inset: 0; overflow: hidden; touch-action: none; }
+    #plan {
+      position: absolute; left: 0; top: 0; max-width: none; user-select: none; -webkit-user-drag: none;
+    }
+    #title {
+      position: fixed; left: 0; right: 0; top: calc(18px + env(safe-area-inset-top, 0px));
+      margin: 0; text-align: center; pointer-events: none;
+      font-family: "KnightMaps Title", "Gotham", "Montserrat", sans-serif; font-weight: 800;
+      font-size: 34px; letter-spacing: 0.01em; color: #F1EDE4;
+    }
+    #title span { color: #BA9B37; }
+    #destination {
+      position: fixed; left: 0; right: 0; top: calc(64px + env(safe-area-inset-top, 0px));
+      text-align: center; pointer-events: none;
+      font-family: "KnightMaps Title", "Gotham", "Montserrat", sans-serif; font-weight: 800;
+      font-size: 20px; color: #F1EDE4;
+    }
+    #destination span { color: #FFC904; }
+    #mute {
+      position: fixed; z-index: 2; right: 16px; top: calc(152px + env(safe-area-inset-top, 0px));
+      width: 44px; height: 44px; border-radius: 50%; border: 1px solid #3a3a3a; background: #2D2D2D;
+      color: #F1EDE4; display: grid; place-items: center; padding: 0;
+    }
+    #mute .off { display: none; }
+    #mute.muted { color: #FFC904; border-color: #BA9B37; }
+    #mute.muted .on { display: none; }
+    #mute.muted .off { display: block; }
+    #directions {
+      position: fixed; left: 0; right: 0; top: calc(160px + env(safe-area-inset-top, 0px));
+      text-align: center; pointer-events: none;
+      font: 28px "KnightMaps Title", sans-serif; font-weight: 800; color: #FFFFFF;
+      text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8);
+    }
+    #search {
+      position: fixed; left: 50%; transform: translateX(-50%); z-index: 2;
+      top: calc(100px + env(safe-area-inset-top, 0px)); width: min(320px, calc(100vw - 32px));
+    }
+    #room-search {
+      width: 100%; box-sizing: border-box; padding: 10px 14px; border-radius: 10px;
+      border: 1px solid #3a3a3a; background: #2D2D2D; color: #F1EDE4;
+      font: 15px "KnightMaps Title", sans-serif; font-weight: 800; outline: none;
+    }
+    #room-search:focus { border-color: #FFC904; }
+    #search-row { position: relative; }
+    #room-search { padding-right: 46px; }
+    #room-search::-webkit-search-cancel-button { display: none; }
+    #mic {
+      position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px;
+      border: 0; border-radius: 50%; background: transparent; color: #F1EDE4; display: grid; place-items: center;
+    }
+    #mic.on { background: #FFC904; color: #111111; animation: mic-pulse 1.2s ease-in-out infinite; }
+    @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 201, 4, 0.55); } 50% { box-shadow: 0 0 0 8px rgba(255, 201, 4, 0); } }
+    #room-search::placeholder { color: #8f8a80; font-weight: 600; }
+    #room-list {
+      list-style: none; margin: 6px 0 0; padding: 4px 0; max-height: 40vh; overflow-y: auto;
+      touch-action: pan-y; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+      background: #2D2D2D; border: 1px solid #3a3a3a; border-radius: 10px;
+    }
+    #room-list li { padding: 10px 14px; color: #F1EDE4; font: 15px "KnightMaps Title", sans-serif; font-weight: 800; }
+    #room-list li:active { background: #FFC904; color: #111111; }
+    #room-list li.none { color: #8f8a80; border-bottom: 1px solid #3a3a3a; }
+    #camera-info {
+      position: fixed; left: 50%; transform: translateX(-50%); top: calc(76px + env(safe-area-inset-top, 0px));
+      width: min(360px, calc(100vw - 32px)); box-sizing: border-box; padding: 12px 16px; border-radius: 12px;
+      background: rgba(17, 17, 17, 0.6); color: #FFFFFF; text-align: center;
+      font: 17px "KnightMaps Title", sans-serif; font-weight: 700;
+    }
+    #camera-info .instruction { font-size: 30px; font-weight: 800; text-shadow: 0 2px 6px rgba(0, 0, 0, 0.8); }
+    body:not(.outside) #camera-info { display: none; }
+    #camera { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+    body.outside #map, body.outside #destination, body.outside #directions, body.outside #search { display: none; }
+    body.outside #title { text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8); }
+    #mode {
+      position: relative; display: flex; width: 220px; padding: 4px; border-radius: 999px;
+      background: #2D2D2D; border: 1px solid #3a3a3a; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    }
+    #mode .knob {
+      position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px); border-radius: 999px;
+      background: #FFC904; transition: transform 0.25s ease;
+    }
+    body.outside #mode .knob { transform: translateX(100%); }
+    #mode button {
+      position: relative; flex: 1; border: 0; background: none; padding: 8px 0; border-radius: 999px;
+      font: 15px "KnightMaps Title", sans-serif; font-weight: 800; color: #F1EDE4; transition: color 0.25s;
+    }
+    #mode button[aria-checked="true"] { color: #111111; }
+    #shutter {
+      width: 74px; height: 74px; border-radius: 50%; border: 5px solid #F1EDE4; background: #FFC904;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+    }
+    #shutter:active { transform: scale(0.92); }
+    #camera-buttons { display: flex; align-items: center; justify-content: center; gap: 22px; }
+    #camera-buttons .spacer { width: 84px; }   /* balances the Upload button so the shutter stays centred */
+    #upload {
+      width: 84px; padding: 10px 0; border-radius: 10px; border: 0; background: #2D2D2D; color: #F1EDE4;
+      font: 14px "KnightMaps Title", sans-serif; font-weight: 800; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    }
+    #upload:disabled { opacity: 0.5; }
+    body:not(.outside) #camera-buttons { display: none; }
+    #shutter:disabled { opacity: 0.5; }
+    #nodes { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+    .node { display: none; }   /* reference nodes aren't shown; only the gold located dot is */
+    .room-selected { fill: #FFC904; stroke: #111111; stroke-width: 1.5; }   /* the chosen destination */
+    .room-selected-label {
+      fill: #111111; font-family: Roboto, Helvetica, Arial, sans-serif; font-weight: 700;
+      text-anchor: middle; dominant-baseline: central;
+    }
+    .route { fill: none; stroke: #FFC904; stroke-opacity: 0.75; stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 2 10; }
+    .goal { r: 10; fill: #111111; stroke: #F1EDE4; stroke-width: 3; }
+    .accuracy { fill: #FFC904; fill-opacity: 0.12; stroke: #FFC904; stroke-opacity: 0.35; stroke-width: 1.5; }   /* faint gold */
+    .located { fill: #FFC904; stroke: #111111; stroke-width: 2.5; stroke-linejoin: round; }   /* the person: UCF gold */
+    #controls {
+      position: fixed;
+      left: 0; right: 0;
+      bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+    }
+    #status {
+      min-height: 1.2em; padding: 4px 10px; border-radius: 6px;
+      background: #2D2D2D; color: #F1EDE4; font-size: 13px; text-align: center; white-space: pre-line; max-width: calc(100vw - 32px); overflow-wrap: anywhere; max-height: 30vh; overflow: hidden;
+    }
+    #status:empty { visibility: hidden; }
+    #scan { font: inherit; font-size: 18px; padding: 16px 28px; border-radius: 10px; border: 0; background: #2D2D2D; color: #F1EDE4; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6); }
+    #scan.tracking { background: #FFC904; color: #111111; }   /* UCF gold while tracking */
+  </style>
+</head>
+<body>
+  <video id="camera" playsinline autoplay muted hidden></video>
+  <div id="map">
+    <img id="plan" src="floorplan.svg" alt="Floor plan" draggable="false">
+    <svg id="nodes" viewBox="0 0 1544 987" preserveAspectRatio="none" aria-label="Possible locations"></svg>
+  </div>
+  <h1 id="title">Knight<span>Maps</span></h1>
+  <div id="destination"></div>
+  <div id="search">
+    <div id="search-row">
+      <input id="room-search" type="search" inputmode="text" autocomplete="off" spellcheck="false"
+             placeholder="Search room number" aria-label="Destination room">
+      <button id="mic" type="button" aria-label="Voice search" aria-pressed="false">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor"
+          d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>
+      </button>
+    </div>
+    <ul id="room-list" hidden></ul>
+  </div>
+  <button id="mute" type="button" aria-label="Mute directions" aria-pressed="false">
+    <svg class="on" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor"
+      d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06a9 9 0 0 0 0-17.54z"/></svg>
+    <svg class="off" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor"
+      d="M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zM19 12c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12a9 9 0 0 0-7-8.77v2.06A7 7 0 0 1 19 12zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a9 9 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z"/></svg>
+  </button>
+  <div id="directions" aria-live="polite"></div>
+  <div id="camera-info" aria-live="polite" hidden></div>
+  <div id="controls">
+    <div id="status"></div>
+    <div id="mode" role="radiogroup" aria-label="Inside or outside">
+      <span class="knob"></span>
+      <button type="button" data-mode="inside" role="radio" aria-checked="true">Inside</button>
+      <button type="button" data-mode="outside" role="radio" aria-checked="false">Outside</button>
+    </div>
+    <button id="scan">Locate</button>
+    <div id="camera-buttons">
+      <button id="upload" type="button" hidden>Upload</button>
+      <button id="shutter" hidden aria-label="Take picture"></button>
+      <span class="spacer"></span>
+    </div>
+    <input id="pick-photo" type="file" accept="image/*" hidden>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+  <script type="module" src="/src/map.js"></script>
+  <script type="module" src="/src/nodes.js"></script>
+</body>
+</html>
