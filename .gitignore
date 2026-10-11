@@ -17,3 +17,14 @@ server/*.index
 
 server/rssi/*.csv
 server/rssi/vectors/
+# Android / web apps (app/, rssi-monitor/)
+node_modules/
+dist/
+apk/
+*.apk
+.DS_Store
+**/android/app/src/main/assets/public/
+**/android/app/src/main/assets/capacitor.config.json
+**/android/app/src/main/assets/capacitor.plugins.json
+**/android/capacitor-cordova-android-plugins/
+**/android/.idea/
