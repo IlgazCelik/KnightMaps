@@ -1,6 +1,6 @@
 {
   "appId": "com.example.rssimonitor",
-  "appName": "RSSI Monitor",
+  "appName": "RSSI Testing Monitor",
   "webDir": "dist",
   "android": {
     "adjustMarginsForEdgeToEdge": "force"
