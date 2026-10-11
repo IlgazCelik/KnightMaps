@@ -30,14 +30,50 @@ Standard GPS lacks indoor accuracy, and Wi-Fi routers are inaccessible while out
 
 ## 🗂️ Project Structure (`server/`)
 
-```text
-server/
-├── app.py                # Main Flask backend application
-├── templates/            # HTML front-end templates (e.g., index.html)
-├── vpr/                  # Visual Place Recognition modules (clustering, network, database)
-├── rssi/                 # RSSI scan datasets, vector points, and BSSID processing scripts
-├── uploads/              # Dynamic user-uploaded images and photos
-├── cluster_centroids.npy # NumPy array for cluster centroids
-├── database_*.npy        # Processed NumPy matrix files for spatial/GPS paths and raw data
-├── vlad_database.index   # Faiss / Vector index database for VPR
-└── output.index          # Secondary feature index
+  ## 🗂️  Project Structure
+
+  ```text
+  KnightMaps/
+  ├── server/                       # Flask backend: localization + routing
+  │   ├── app.py                    # Main Flask app (/api/localize_json, /api/upload)
+  │   ├── final_0.1.json            # Processed RSSI fingerprint data
+  │   ├── templates/                # HTML front-end templates (index.html)
+  │   ├── rssi/                     # RSSI scan datasets, vector points, BSSID processing (processBSSID.py, tile.py)
+  │   ├── vpr/                      # Visual Place Recognition
+  │   │   ├── centroid.py, cluster.py, database.py, network.py, test.py   # feature clustering, network, index
+  │   │   ├── createDataset.py      # Extracts frames from a walk-through video into dataset/
+  │   │   └── labeldata.py          # GUI to tag each frame with latitude/longitude -> annotations.json
+  │   ├── uploads/                  # (generated) user-uploaded photos
+  │   └── *.npy, *.index            # (generated) cluster centroids, VLAD/Faiss indexes, path matrices
+  │
+  ├── app/                          # KnightMaps Android app (Capacitor + Vite)
+  │   ├── index.html                # Layout and styles
+  │   ├── src/
+  │   │   ├── main.js               # Tracking loop, server requests, dead reckoning, destination, Inside/Outside
+  │   │   ├── map.js                # Zoom, pan and tap on the floor plan
+  │   │   ├── nodes.js              # Position marker, accuracy circle, route line, room highlight
+  │   │   ├── rooms.js              # Rooms, restrooms, stairs and lifts (shapes + hallway goal cells)
+  │   │   ├── walkable.js           # Hallway mask (keeps the marker out of rooms)
+  │   │   ├── directions.js         # Indoor turn-by-turn instructions
+  │   │   ├── outside.js            # Outdoor directions (GPS bearing to the target)
+  │   │   ├── camera.js             # Outside camera / photo upload
+  │   │   ├── search.js, voice.js   # Room search and voice search
+  │   │   ├── audio.js              # Spoken instruction clips + mute
+  │   │   ├── bssid_order.js        # BSSID order the server expects
+  │   │   └── wifi.js               # Bridge to the native plugin
+  │   ├── native-android/           # WifiScanPlugin.java: Wi-Fi scan, steps, compass, GPS, upload, speech-to-text
+  │   ├── public/                   # floorplan.svg, audio clips, font
+  │   ├── tools/                    # Scan normalization, KNN localizer, scan server, building outline
+  │   ├── vectors/, scans/          # Fingerprint vectors and sample scans
+  │   └── android/                  # Android Studio project
+  │
+  ├── rssi-monitor/                 # Helper app: one BSSID's RSSI vs. time
+  │   ├── src/                      # main.js, chart.js, scanner.js
+  │   ├── native-android/           # RssiPlugin.java
+  │   └── android/                  # Android Studio project
+  │
+  ├── dataset/                      # Video frames for VPR (frame_*.jpg)
+  ├── annotations.json              # Latitude/longitude label for each frame
+  ├── input.mp4                     # Walk-through video the frames come from
+  └── readme.md
+  ```
