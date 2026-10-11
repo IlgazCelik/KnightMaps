@@ -74,6 +74,7 @@ KnightMaps/
 ├── annotations.json            # Latitude/longitude label for each frame
 ├── input.mp4                   # Walk-through video the frames come from
 └── readme.md
+```
 📚 References & Acknowledgments
 Our Visual Place Recognition (VPR) pipeline builds upon foundational research from DINOv2 and AnyLoc:
 
@@ -97,4 +98,3 @@ Code snippet
       primaryClass={cs.CV},
       url={[https://arxiv.org/abs/2308.00688](https://arxiv.org/abs/2308.00688)}, 
 }
-```
