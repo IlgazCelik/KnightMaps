@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Architectural Map Wi-Fi Localizer (Server-Side Map)</title>
+    <style>
+        body { font-family: Arial, sans-serif; display: flex; margin: 0; padding: 15px; background: #f4f6f9; }
+        .canvas-container { background: white; padding: 10px; border: 1px solid #b0bec5; border-radius: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        canvas { display: block; background: #ffffff; cursor: pointer; }
+        .control-panel { width: 420px; margin-left: 20px; display: flex; flex-direction: column; gap: 15px; }
+        fieldset { border: 1px solid #cfd8dc; border-radius: 4px; padding: 12px; background: white; }
+        legend { font-weight: bold; color: #37474f; font-size: 14px; }
+        .btn { background: #1976D2; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; width: 100%; margin-top: 5px; font-weight: bold; }
+        .btn:hover { background: #1565C0; }
+        input[type="file"], input[type="number"] { width: 100%; padding: 6px; margin-top: 5px; box-sizing: border-box; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+        th, td { border: 1px solid #cfd8dc; padding: 6px; text-align: center; }
+        th { background: #eceff1; }
+        tr.selected { background: #bbdefb !important; cursor: pointer; }
+        tr:hover { background: #f5f5f5; cursor: pointer; }
+        .status { font-size: 12px; color: #555; margin-top: 4px; }
+        .inspector { font-size: 13px; margin-top: 10px; background: #fafafa; padding: 8px; border-left: 3px solid #1976D2; }
+        .estimate-card { background: #e8f5e9; border: 1px solid #a5d6a7; padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 13px; color: #2e7d32; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="canvas-container">
+        <canvas id="mapCanvas" width="960" height="960"></canvas>
+    </div>
+
+    <div class="control-panel">
+        <fieldset>
+            <legend>Localization Inputs</legend>
+            <label>Query Wi-Fi Scan JSON:</label>
+            <input type="file" id="queryFile" accept=".json">
+            <button class="btn" onclick="uploadQuery()">Upload Query Scan</button>
+            <div class="status" id="queryStatus">Query Scan: No file loaded.</div>
+        </fieldset>
+
+        <fieldset>
+            <legend>KNN Matching</legend>
+            <label>Neighbors (K):</label>
+            <input type="number" id="kInput" value="3" min="1" max="10">
+            <button class="btn" onclick="runLocalization()" style="background: #388E3C;">Run Localization & Show</button>
+        </fieldset>
+
+        <fieldset style="flex-grow: 1;">
+            <legend>Localization Results & Estimated Tile</legend>
+            
+            <div class="estimate-card" id="estimateCard">
+                Estimated Tile (Weighted Avg): [—, —]
+            </div>
+
+            <table id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Coord (r,c)</th>
+                        <th>Type</th>
+                        <th>Distance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="4" style="color: #888;">No results yet.</td></tr>
+                </tbody>
+            </table>
+            <div class="inspector" id="inspectorBox">Select a match above or click a cell on the map.</div>
+        </fieldset>
+    </div>
+
+<script>
+    const GRID_SIZE = 120;
+    const CELL_SIZE = 8;
+    const PALETTE = {
+        "Empty": "#FFFFFF",
+        "Wall": "#333333",
+        "Stairs": "#FF9800",
+        "Elevator": "#00BCD4",
+        "Door": "#8D6E63"
+    };
+
+    let mapData = {};
+    let matches = [];
+    let estimatedCoord = null;
+    let selectedCell = null;
+    let canvas = document.getElementById("mapCanvas");
+    let ctx = canvas.getContext("2d");
+
+    function initGrid() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        ctx.strokeStyle = "#f0f0f0";
+        ctx.lineWidth = 0.5;
+        for (let i = 0; i <= GRID_SIZE; i++) {
+            ctx.beginPath();
+            ctx.moveTo(i * CELL_SIZE, 0);
+            ctx.lineTo(i * CELL_SIZE, GRID_SIZE * CELL_SIZE);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(0, i * CELL_SIZE);
+            ctx.lineTo(GRID_SIZE * CELL_SIZE, i * CELL_SIZE);
+            ctx.stroke();
+        }
+    }
+
+    function redrawMap() {
+        initGrid();
+
+        // 1. Draw map tiles
+        for (let key in mapData) {
+            let parts = key.split(",");
+            if (parts.length === 2) {
+                let r = parseInt(parts[0]);
+                let c = parseInt(parts[1]);
+                let info = mapData[key];
+                let cellType = (typeof info === 'object') ? (info.type || "Empty") : info;
+                
+                ctx.fillStyle = PALETTE[cellType] || "#FFFFFF";
+                ctx.fillRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+
+                if (typeof info === 'object' && info.bssid_features) {
+                    ctx.fillStyle = "#9C27B0";
+                    ctx.fillRect(c * CELL_SIZE + 2, r * CELL_SIZE + 2, CELL_SIZE - 4, CELL_SIZE - 4);
+                }
+            }
+        }
+
+        // 2. Draw Top K KNN neighbors (yellow/orange outlines)
+        matches.forEach((m, idx) => {
+            let [r, c] = m.coord;
+            let x = c * CELL_SIZE;
+            let y = r * CELL_SIZE;
+
+            ctx.strokeStyle = (idx === 0) ? "#FF3D00" : "#FFEA00";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x - 1, y - 1, CELL_SIZE + 2, CELL_SIZE + 2);
+        });
+
+        // 3. Draw Estimated Coordinate (Weighted Average Tile) with bright green indicator
+        if (estimatedCoord && estimatedCoord.length === 2) {
+            let [er, ec] = estimatedCoord;
+            let ex = ec * CELL_SIZE;
+            let ey = er * CELL_SIZE;
+
+            ctx.fillStyle = "rgba(0, 230, 118, 0.45)";
+            ctx.fillRect(ex, ey, CELL_SIZE, CELL_SIZE);
+
+            ctx.strokeStyle = "#00C853";
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(ex - 2, ey - 2, CELL_SIZE + 4, CELL_SIZE + 4);
+        }
+
+        // 4. Draw User Selected Cell Highlight
+        if (selectedCell) {
+            let [r, c] = selectedCell;
+            ctx.strokeStyle = "#1E88E5";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(c * CELL_SIZE, r * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+        }
+    }
+
+    async function uploadQuery() {
+        let fileInput = document.getElementById("queryFile");
+        if (fileInput.files.length === 0) { alert("Please select a query scan JSON file."); return; }
+        
+        let formData = new FormData();
+        formData.append("file", fileInput.files[0]);
+
+        let res = await fetch('/upload_query', { method: 'POST', body: formData });
+        let data = await res.json();
+        if (data.success) {
+            document.getElementById("queryStatus").innerText = `Query Scan: Loaded (${data.bssid_count} BSSIDs)`;
+        } else {
+            alert("Error: " + data.error);
+        }
+    }
+
+    async function runLocalization() {
+        let k = document.getElementById("kInput").value;
+        let res = await fetch('/localize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ k: parseInt(k) })
+        });
+        let data = await res.json();
+        if (data.success) {
+            matches = data.matches;
+            estimatedCoord = data.estimated_coord;
+            updateDisplay();
+        } else {
+            alert("Error: " + data.error);
+        }
+    }
+
+    async function fetchState() {
+        let res = await fetch('/get_state');
+        let data = await res.json();
+        mapData = data.map_data;
+        matches = data.matches;
+        estimatedCoord = data.estimated_coord || null;
+        updateDisplay();
+    }
+
+    function updateDisplay() {
+        // Update Estimated Tile Card
+        let card = document.getElementById("estimateCard");
+        if (estimatedCoord && estimatedCoord.length === 2) {
+            card.innerHTML = `Estimated Tile (Weighted Avg): (${estimatedCoord[0]}, ${estimatedCoord[1]})`;
+        } else {
+            card.innerHTML = `Estimated Tile (Weighted Avg): [—, —]`;
+        }
+
+        // Update Results Table
+        let tbody = document.querySelector("#resultsTable tbody");
+        tbody.innerHTML = "";
+        if (matches.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" style="color: #888;">No results yet.</td></tr>`;
+            redrawMap();
+            return;
+        }
+
+        matches.forEach((m, idx) => {
+            let tr = document.createElement("tr");
+            tr.innerHTML = `<td>${idx + 1}</td><td>(${m.coord[0]}, ${m.coord[1]})</td><td>${m.type}</td><td>${m.distance.toFixed(2)}</td>`;
+            tr.onclick = () => {
+                selectedCell = m.coord;
+                document.querySelectorAll("#resultsTable tr").forEach(row => row.classList.remove("selected"));
+                tr.classList.add("selected");
+                document.getElementById("inspectorBox").innerHTML = `Rank #${idx + 1} | Coordinate: (${m.coord[0]}, ${m.coord[1]})<br>Type: ${m.type} | Distance: ${m.distance.toFixed(2)}`;
+                redrawMap();
+            };
+            tbody.appendChild(tr);
+        });
+
+        redrawMap();
+    }
+
+    canvas.onclick = function(event) {
+        let rect = canvas.getBoundingClientRect();
+        let x = event.clientX - rect.left;
+        let y = event.clientY - rect.top;
+        let c = Math.floor(x / CELL_SIZE);
+        let r = Math.floor(y / CELL_SIZE);
+
+        if (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) {
+            selectedCell = [r, c];
+            let key = `${r},${c}`;
+            let info = mapData[key];
+            let cellType = "Unknown";
+            if (info) {
+                cellType = (typeof info === 'object') ? (info.type || "Empty") : info;
+            }
+            document.getElementById("inspectorBox").innerHTML = `Selected Cell: (${r}, ${c}) | Type: ${cellType}`;
+            redrawMap();
+        }
+    };
+
+    initGrid();
+    fetchState();
+</script>
+</body>
+</html>
