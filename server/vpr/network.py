@@ -8,6 +8,61 @@ import torch.nn.functional as F
 from PIL import Image, ImageOps
 from torch import nn
 from sklearn.decomposition import PCA
+import re
+
+IMAGE_DIR = "/home/celik/scripts/knightmaps/server/vpr/dataset/"
+ANNOTATIONS_PATH = "/home/celik/scripts/knightmaps/server/vpr/annotations.json"   
+
+GPS_ANCHORS = {
+    0:    (28.6015573, -81.1979859),
+    8400: (28.6009892, -81.1983561),
+}
+IMAGE_EXTS = (".jpg", ".jpeg", ".png")
+
+
+def parse_frame_number(path):
+    m = re.search(r"frame_(\d+)", os.path.basename(str(path)))
+    return int(m.group(1)) if m else None
+
+
+def interpolate_gps(frame):
+    """Piecewise-linear GPS from anchors. Returns None outside the anchored range (no extrapolation)."""
+    keys = sorted(GPS_ANCHORS)
+    if frame is None or frame < keys[0] or frame > keys[-1]:
+        return None
+    lat = np.interp(frame, keys, [GPS_ANCHORS[k][0] for k in keys])
+    lon = np.interp(frame, keys, [GPS_ANCHORS[k][1] for k in keys])
+    return float(lat), float(lon)
+
+
+def load_database_df(image_dir=IMAGE_DIR, annotations_path=ANNOTATIONS_PATH):
+    """Database = only the annotated images, with their real GPS. Sorted by filename."""
+    with open(annotations_path) as f:
+        ann = json.load(f)
+
+    rows, missing, bad = [], [], []
+    for name in sorted(ann):
+        try:
+            lat, lon = float(ann[name]["lat"]), float(ann[name]["lon"])
+        except (KeyError, TypeError, ValueError):
+            bad.append(name)
+            continue
+        if not os.path.exists(os.path.join(image_dir, name)):
+            missing.append(name)
+            continue
+        rows.append({"path": name, "lat": lat, "lon": lon})
+
+    if missing:
+        print(f"[WARNING] {len(missing)} annotated images not found in {image_dir}: {missing[:5]}...")
+    if bad:
+        print(f"[WARNING] {len(bad)} annotations have no valid lat/lon and were skipped.")
+    if not rows:
+        raise RuntimeError(f"No usable annotated images ({annotations_path} vs {image_dir})")
+
+    df = pd.DataFrame(rows)
+    print(f"Database: {len(df)} annotated images "
+          f"({df[['lat', 'lon']].drop_duplicates().shape[0]} distinct GPS positions)")
+    return df
 
 # Settings
 MODEL_TYPE = "dinov2_vitb14"
@@ -16,7 +71,7 @@ IMAGE_SIZE = (322, 434)          # (H, W), multiples of 14. Use (224, 224) for t
 MEAN = (0.485, 0.456, 0.406)     # ImageNet stats, which DINOv2 was trained with
 STD = (0.229, 0.224, 0.225)
 
-NUM_CLUSTERS = 64
+NUM_CLUSTERS = 32
 NORMALIZE_PATCHES = True
 ASSIGNMENT = "hard"              # "hard" (AnyLoc default) or "soft"
 SOFT_TEMPERATURE = 20.0          # only used when ASSIGNMENT == "soft"
@@ -24,10 +79,8 @@ MAX_CLUSTER_VECTORS = 200_000
 SEED = 9
 
 PCA_DIM = 2048                   # None disables PCA. Must be < number of database images.
-PCA_WHITEN = True
+PCA_WHITEN = False
 
-LABELS_CSV = "/home/celik/scripts/knightmaps/scripts/ucfCampusDataset/coords_v2.csv"
-IMAGE_DIR = "/home/celik/scripts/knightmaps/scripts/ucfCampusDataset/ucf_streetview_images_v2/"
 
 CENTROIDS_PATH = "cluster_centroids.npy"
 PATHS_PATH = "database_paths.npy"
@@ -89,15 +142,6 @@ def parse_gps_from_name(path):
     return None
 
 
-def load_database_df():
-    df = pd.read_csv(LABELS_CSV)
-    df["path"] = df["path"].astype(str).str.strip()
-    ok = df["path"].apply(lambda p: os.path.exists(os.path.join(IMAGE_DIR, p)))
-    if (~ok).any():
-        print(f"Warning: dropping {(~ok).sum()} rows whose image files are missing.")
-        df = df[ok]
-    return df.sort_values("path").reset_index(drop=True)
-
 
 _MEAN_T = torch.tensor(MEAN).view(3, 1, 1)
 _STD_T = torch.tensor(STD).view(3, 1, 1)
@@ -125,20 +169,22 @@ class ImageDataset(torch.utils.data.Dataset):
 
 # PCA / final descriptor
 def fit_pca(raw, dim, whiten, device):
-    """Computes PCA in seconds using a randomized solver on the CPU."""
+    """Randomized PCA on CPU. dim is clamped to what the data can support."""
     if hasattr(raw, "cpu"):
         raw = raw.cpu().numpy()
-        
-    print("Fitting Randomized PCA (fast)...")
-    pca = PCA(n_components=dim, whiten=whiten, svd_solver='randomized')
+    n = raw.shape[0]
+    eff = min(dim, n - 1, raw.shape[1])
+    if eff < dim:
+        print(f"[WARNING] PCA_DIM={dim} not possible with {n} images; using {eff}.")
+    print("Fitting Randomized PCA...")
+    pca = PCA(n_components=eff, whiten=whiten, svd_solver="randomized", random_state=SEED)
     pca.fit(raw)
-    
+
     mean = pca.mean_.astype(np.float32)
     if whiten:
-        proj = (pca.components_ / pca.singular_values_[:, np.newaxis] * np.sqrt(raw.shape[0] - 1)).astype(np.float32)
+        proj = (pca.components_ / pca.singular_values_[:, None] * np.sqrt(n - 1)).astype(np.float32)
     else:
         proj = pca.components_.astype(np.float32)
-        
     return mean, proj
 
 def load_pca():

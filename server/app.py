@@ -15,7 +15,7 @@ from PIL import Image
 from flask import Flask, jsonify, render_template, request, send_from_directory
 from werkzeug.utils import secure_filename
 
-from network import (
+from vpr.network import (
     DESCRIPTOR_SETTINGS, GPS_PATH, IMAGE_DIR, INDEX_PATH, PATHS_PATH,
     check_meta, finalize_descriptors, load_pca, load_vpr_model, preprocess,
 )
@@ -25,11 +25,11 @@ UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-MAP_FILENAME = 'final_0.1.json'
+MAP_FILENAME = 'rssiData.json'
 GRID_SIZE = 120
 
 # ----------------------------------------------------------------------------- VPR matching settings
-VPR_RADIUS_METERS = 20.0   # minimum GPS gate radius around the phone fix
+VPR_RADIUS_METERS = 50.0   # minimum GPS gate radius around the phone fix
 SEARCH_K = 150             # FAISS candidates retrieved per query
 VOTE_TOP = 10               # in-gate candidates considered for the neighbour vote
 VOTE_RADIUS_M = 20.0       # candidates within this distance of the best one vote together
@@ -342,7 +342,7 @@ def upload_image():
             "mode": "vpr",
             "estimated_coord": adjusted_coord,
             "raw_estimated_coord": estimated_coord,
-            "estimated_gps": {"latitude": 28.6020364, "longitude": -81.1991612},
+            "estimated_gps": {"latitude": est_gps[0], "longitude": est_gps[1]},
             "matched_image": matched_path,
             "similarity": similarity,
             "distance": distance,

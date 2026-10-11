@@ -1,0 +1,45 @@
+{
+  "features": {
+    "model_type": "dinov2_vitb14",
+    "layer": 9,
+    "image_size": [
+      322,
+      434
+    ],
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ],
+    "normalize_patches": true
+  },
+  "descriptor": {
+    "model_type": "dinov2_vitb14",
+    "layer": 9,
+    "image_size": [
+      322,
+      434
+    ],
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ],
+    "normalize_patches": true,
+    "num_clusters": 32,
+    "assignment": "hard",
+    "temperature": null,
+    "pca_dim": 2048,
+    "pca_whiten": false
+  }
+}

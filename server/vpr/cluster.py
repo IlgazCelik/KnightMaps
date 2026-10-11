@@ -31,7 +31,7 @@ def main():
     samples = []
 
     print("Sampling patch features...")
-    with torch.inference_mode(), torch.amp.autocast("cuda"):
+    with torch.inference_mode(), torch.autocast(device_type=device.type, enabled=device.type == "cuda"):
         for imgs in tqdm(loader):
             feats = model(imgs.to(device, non_blocking=True)).float()  # B, N, D
             if NORMALIZE_PATCHES:

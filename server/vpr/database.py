@@ -9,7 +9,7 @@ from tqdm import tqdm
 from network import (
     DESCRIPTOR_SETTINGS, FEATURE_SETTINGS, GPS_PATH, INDEX_PATH, PATHS_PATH, PCA_DIM, PCA_PATH,
     PCA_WHITEN, RAW_PATH, ImageDataset, check_meta, finalize_descriptors, fit_pca,
-    load_database_df, load_vpr_model, parse_gps_from_name, save_meta,
+    load_database_df, load_vpr_model, save_meta,
 )
 
 BATCH_SIZE = 32
@@ -18,8 +18,9 @@ NUM_WORKERS = 4
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    df = load_database_df()
+    df = load_database_df()  # only the annotated images
     paths = df["path"].tolist()
+    print(f"{len(paths)} annotated database images")
 
     check_meta("features", FEATURE_SETTINGS)
     model = load_vpr_model(device)
@@ -28,9 +29,9 @@ def main():
                         num_workers=NUM_WORKERS, pin_memory=device.type == "cuda")
     chunks = []
     print("Extracting global VLAD descriptors...")
-    with torch.inference_mode(), torch.amp.autocast("cuda"):
+    with torch.inference_mode(), torch.autocast(device_type=device.type, enabled=device.type == "cuda"):
         for imgs in tqdm(loader):
-            chunks.append(model(imgs.to(device, non_blocking=True)).cpu().numpy().astype(np.float32))
+            chunks.append(model(imgs.to(device, non_blocking=True)).float().cpu().numpy().astype(np.float32))
     raw = np.concatenate(chunks)
     print(f"Raw descriptors: {raw.shape}")
 
@@ -38,15 +39,7 @@ def main():
     if device.type == "cuda":
         torch.cuda.empty_cache()
 
-    gps = np.full((len(paths), 2), np.nan, dtype=np.float64)
-    for i, p in enumerate(paths):
-        g = parse_gps_from_name(p)
-        if g is not None:
-            gps[i] = g
-    n_bad = int(np.isnan(gps[:, 0]).sum())
-    if n_bad:
-        print(f"[WARNING] {n_bad}/{len(paths)} filenames have no parseable GPS. "
-              "They stay searchable but should be skipped as matches on the server.")
+    gps = df[["lat", "lon"]].to_numpy(dtype=np.float64)  # from annotations.json
 
     if PCA_DIM is not None:
         print(f"Fitting PCA{'+whitening' if PCA_WHITEN else ''} -> {PCA_DIM} dims...")
