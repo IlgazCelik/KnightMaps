@@ -28,3 +28,5 @@ apk/
 **/android/app/src/main/assets/capacitor.plugins.json
 **/android/capacitor-cordova-android-plugins/
 **/android/.idea/
+
+dataset/
