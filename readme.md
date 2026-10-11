@@ -3,8 +3,8 @@
 KnightMaps is an advanced indoor and outdoor hybrid navigation system designed to help students seamlessly navigate campus buildings and classrooms.
 
 ## 👥 Team
-* ADRIAN STONE
-* CORBIN WILLIAMS
+* Adrian Stone
+* Corbin Williams
 * Faruk Celik
 * Sean Robert Vicha
 
